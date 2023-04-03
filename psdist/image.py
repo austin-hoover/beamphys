@@ -1,4 +1,4 @@
-"""Functions for n-dimensional images."""
+"""Functions for multi-dimensional images."""
 import numpy as np
 from tqdm import tqdm
 from scipy import ndimage
@@ -41,9 +41,9 @@ def get_radii(coords, Sigma):
 
     Parameters
     ----------
-    coords : list[ndarray], length n
+    coords : list[ndarray], length d
         Coordinate array for each dimension of the regular grid.
-    Sigma : ndarray, shape (n, n)
+    Sigma : ndarray, shape (d, d)
         Covariance matrix of some distribution on the grid.
 
     Returns
@@ -67,7 +67,7 @@ def radial_density(f, R, radii, dr=None):
     Parameters
     ----------
     f : ndarray
-        An n-dimensional image.
+        A d-dimensional image.
     R : ndarray, same shape as `f`.
         Gives the "radius" at each pixel in f.
     radii : ndarray, shape (k,)
@@ -96,14 +96,14 @@ def mean(f, coords=None):
     Parameters
     ----------
     f : ndarray
-        An n-dimensional image.
+        A d-dimensional image.
     coords : list[ndarray]
         Coordinates along each axis of the image.
 
     Returns
     -------
-    ndarray, shape (n,)
-        The n-dimensional mean.
+    ndarray, shape (d,)
+        The d-dimensional mean.
     """
     if coords is None:
         coords = [np.arange(f.shape[k]) for k in range(f.ndim)]
@@ -124,7 +124,7 @@ def cov(f, coords=None):
 
     Returns
     -------
-    ndarray, shape (n, n)
+    ndarray, shape (d, d)
         The covariance matrix.
     """
 
@@ -147,8 +147,8 @@ def cov(f, coords=None):
     if coords is None:
         coords = [np.arange(f.shape[k]) for k in range(f.ndim)]
 
-    n = f.ndim
-    if n < 3:
+    d = f.ndim
+    if d < 3:
         return cov_2x2(f, coords)
 
     Sigma = np.zeros((n, n))
@@ -159,7 +159,7 @@ def cov(f, coords=None):
             _coords = [coords[k] for k in axis]
             # Compute 2 x 2 covariance matrix from this projection.
             _sigma = cov_2x2(_image, _coords)
-            # Update elements of n x n covariance matrix. This will update
+            # Update elements of d x d covariance matrix. This will update
             # some elements multiple times, but it should not matter.
             Sigma[i, i] = _sigma[0, 0]
             Sigma[j, j] = _sigma[1, 1]
@@ -168,18 +168,18 @@ def cov(f, coords=None):
 
 
 def corr(f, coords=None):
-    """Compute the n x n correlation matrix.
+    """Compute the d x d correlation matrix.
 
     Parameters
     ----------
     f : ndarray
-        An n-dimensional image.
+        A d-dimensional image.
     coords : list[ndarray]
         Coordinates along each axis of the image.
 
     Returns
     -------
-    ndarray, shape (n, n)
+    ndarray, shape (d, d)
         The correlation matrix.
     """
     return cov2corr(cov(f, coords))
@@ -189,12 +189,12 @@ def corr(f, coords=None):
 # ------------------------------------------------------------------------------
 
 
-def slice_idx(n=1, axis=0, ind=0):
+def slice_idx(d=1, axis=0, ind=0):
     """Return planar slice index array.
 
     Parameters
     ----------
-    n : int
+    d : int
         The number of elements in the slice index array. (The number of dimensions
         in the array to be sliced.)
     axis : list[int]
@@ -220,7 +220,7 @@ def slice_idx(n=1, axis=0, ind=0):
     if type(ind) is int:
         ind = [ind]
     # Initialize the slice index to select all elements.
-    idx = n * [slice(None)]
+    idx = d * [slice(None)]
     # If any indices were provided, add them to `idx`.
     for k, item in zip(axis, ind):
         if item is None:
@@ -268,7 +268,7 @@ def slice_idx_contour(f, axis=None, lmin=0.0, lmax=1.0):
     Parameters
     ----------
     f : ndarray
-        An n-dimensional image.
+        A d-dimensional image.
     axis : list[int]
         Specificies the subspace in which the contours are computed. (See
         `slice_idx_ellipsoid`.)
@@ -307,7 +307,7 @@ def project(f, axis=0):
     Parameters
     ----------
     f : ndarray
-        An n-dimensional image.
+        A d-dimensional image.
     axis : list[int]
         The axes onto which the image is projected, i.e., the
         axes which are not summed over. Can be an int or list
@@ -341,19 +341,19 @@ def project(f, axis=0):
 
 
 def project1d_contour(f, axis=0, lmin=0.0, lmax=1.0, fpr=None):
-    """Apply contour slice in n-1 dimensions, then project onto the remaining dimension.
+    """Apply contour slice in d - 1 dimensions, then project onto the remaining dimension.
 
     Parameters
     ----------
     f : ndarray
-        An n-dimensional image.
+        A d-dimensional image.
     axis : int
         The 1D projection axis.
     lmin, lmax : float
         Min and max contour levels of the (n-1)-dimensional projection of `f`,
         normalized the the range [0, 1].
     fpr : ndarray, shape [f.shape[i] for i in range(f.ndim) if i != axis]
-        The (n-1)-dimensional projection of `f` onto all dimensions other than `axis`.
+        The (d-1)-dimensional projection of `f` onto all dimensions other than `axis`.
         (If not provided, it will be computed within the function.)
 
     Returns
@@ -376,19 +376,19 @@ def project1d_contour(f, axis=0, lmin=0.0, lmax=1.0, fpr=None):
 
 
 def project2d_contour(f, axis=(0, 1), lmin=0.0, lmax=1.0, fpr=None):
-    """Apply contour slice in n-2 dimensions, then project onto the remaining two dimensions.
+    """Apply contour slice in d - 2 dimensions, then project onto the remaining two dimensions.
 
     Parameters
     ----------
     f : ndarray
-        An n-dimensional image.
+        A d-dimensional image.
     axis : tuple
         The 2D projection axis.
     lmin, lmax : float
-        Min and max contour levels of the (n-2)-dimensional projection of `f`,
+        Min and max contour levels of the (d-2)-dimensional projection of `f`,
         normalized the the range [0, 1].
     fpr : ndarray, shape [f.shape[i] for i in range(f.ndim) if i != axis]
-        The (n-1)-dimensional projection of `f` onto all dimensions other than `axis`.
+        The (d-1)-dimensional projection of `f` onto all dimensions other than `axis`.
         (If not provided, it will be computed within the function.)
 
     Returns
@@ -429,8 +429,8 @@ def copy_into_new_dim(f, shape=None, axis=-1, method="broadcast", copy=False):
     Parameters
     ----------
     f : ndarray
-        An n-dimensional image.
-    shape : n-tuple of ints
+        An d-dimensional image.
+    shape : d-tuple of ints
         The shape of the new dimensions.
     axis : int (0 or -1)
         If 0, the new dimensions will be inserted before the first axis. If -1,
@@ -553,7 +553,7 @@ def sample_grid(f, coords=None, samples=1):
     Parameters
     ----------
     f : ndarray
-        An n-dimensional histogram.
+        A d-dimensional histogram.
     coords : list[ndarray]
         Coordinates along each axis of the image.
     samples : int
@@ -561,7 +561,7 @@ def sample_grid(f, coords=None, samples=1):
 
     Returns
     -------
-    ndarray, shape (samples, n)
+    ndarray, shape (samples, d)
         Samples drawn from the distribution.
     """
     if coords is None:
