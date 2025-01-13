@@ -4,17 +4,16 @@ from typing import Union
 
 import numpy as np
 import matplotlib.pyplot as plt
-import ultraplot as uplt
 
 from ..hist import Histogram
 from ..hist import Histogram1D
 from ..core import histogram as _histogram
 from ..core import limits as _get_limits
-from ..hist import Histogram
 from ..utils import array_like
-from .hist import plot as _plot_hist, scale_hist
-from .hist import plot_1d as _plot_hist_1d
-from .points import plot as _plot_points
+from .core import plot
+from .core import plot_1d
+from .hist import plot as plot_hist
+from .hist import plot_1d as plot_hist_1d
 
 
 class JointGrid:
@@ -218,10 +217,8 @@ class CornerGrid:
 
     Attributes
     ----------
-    fig : proplot.figure.Figure
-        The main figure.
-    axs : proplot.gridspec.SubplotGrid
-        The subplot axes.
+    fig, axs : plt.Figure, plt.Axes
+        Figure and axes.
     diag_axs : list[proplot.gridspec.SubplotGrid]
         The axes for diagonal (univariate) subplots. Can be empty.
     offdiag_axs : list[proplot.gridspec.SubplotGrid]
@@ -238,6 +235,7 @@ class CornerGrid:
         diag: bool = True,
         diag_shrink: float = 1.0,
         diag_rspine: bool = False,
+        diag_lspine: bool = False,
         diag_share: bool = False,
         diag_frozen: bool = False,
         limits: list[tuple[float, float]] = None,
@@ -255,8 +253,8 @@ class CornerGrid:
             we have an (N - 1) x (N - 1) grid instead of an N x N grid.
         diag_shrink : float in range [0, 1]
             Scales the maximum y value of the diagonal profile plots.
-        diag_rspine : bool
-            Whether to include right spine on diagonal subplots (if `corner`).
+        diag_rspine, diag_lspine : bool
+            Whether to include right/left spine on diagonal subplots (if `corner`).
         diag_share : bool
             Whether to share diagonal axis limits; i.e., whether we can compare
             the areas under the diagonal profile plots.
@@ -271,8 +269,8 @@ class CornerGrid:
         corner : bool
             Whether to hide the upper-triangular subplots.
         **fig_kws
-            Key word arguments passed to `uplt.subplots()`.
-        """
+            Key word arguments passed to `plt.subplots()`.
+        """        
         # Create figure.
         self.new = True
         self.ndim = self.nrows = self.ncols = ndim
@@ -281,6 +279,7 @@ class CornerGrid:
         self.diag = diag
         self.diag_shrink = diag_shrink
         self.diag_rspine = diag_rspine
+        self.diag_lspine = diag_lspine
         self.diag_share = diag_share
         self.diag_ymin = None
         self.diag_yscale = self.ndim * [None]
@@ -291,18 +290,17 @@ class CornerGrid:
             self.ncols = self.ncols - 1
 
         self.fig_kws = fig_kws
-        self.fig_kws.setdefault("figwidth", 1.5 * self.nrows)
-        self.fig_kws.setdefault("aligny", True)
+        self.fig_kws.setdefault("figsize", (1.25 * self.nrows, 1.25 * self.ncols))
+        self.fig_kws.setdefault("constrained_layout", True)
 
-        self.fig, self.axs = uplt.subplots(
+        self.fig, self.axs = plt.subplots(
             nrows=self.nrows,
             ncols=self.ncols,
-            spanx=False,
-            spany=False,
             sharex=False,
             sharey=False,
             **self.fig_kws,
         )
+        # self.fig.align_ylabels(self.axs[:, 0])
 
         # Collect diagonal/off-diagonal subplots and indices.
         self.diag_axs = []
@@ -345,40 +343,53 @@ class CornerGrid:
                     if j > i:
                         self.axs[i, j].axis("off")
 
-        self.axs[:-1, :].format(xticklabels=[])
+        for i in range(self.ndim - 1):
+            for j in range(self.ndim):
+                self.axs[i, j].set_xticklabels([])
+            
         for i in range(self.nrows):
             for j in range(self.ncols):
                 ax = self.axs[i, j]
                 if i != self.nrows - 1:
-                    ax.format(xticklabels=[])
+                    ax.set_xticklabels([])
                 if j != 0:
                     if not (i == j and self.diag_rspine and self.corner and self.diag):
-                        ax.format(yticklabels=[])
+                        ax.set_yticklabels([])
 
-        self.axs.format(xspineloc="bottom", yspineloc="left")
+        for ax in self.axs.flat:
+            for loc in ["top", "right"]:
+                ax.spines[loc].set_visible(False)
+
         if self.corner:
-            if self.diag_rspine:
-                self.format_diag(yspineloc="right")
-            else:
-                self.format_diag(yspineloc="neither")
-        self.axs.format(
-            xtickminor=True, ytickminor=True, xlocator=("maxn", 3), ylocator=("maxn", 3)
-        )
-        self.set_diag_scale("linear")
+            for ax in self.diag_axs:
+                if not self.diag_lspine:
+                    ax.spines["left"].set_visible(False)
+                    # ax.set_yticks([])
+                if not self.diag_rspine:
+                    ax.spines["right"].set_visible(False)
+                    # ax.set_yticks([])
+                    
+        # for ax in self.axs.flat:
+        #     ax.set_xtickminor(True)
+        #     ax.set_ytickminor(True)
+        # self.axs.format(
+        #     xtickminor=True, ytickminor=True, xlocator=("maxn", 3), ylocator=("maxn", 3)
+        # )
+        # self.set_diag_scale("linear")
 
-    def format_diag(self, **kws) -> None:
-        """Format diagonal subplots."""
-        for ax in self.diag_axs:
-            ax.format(**kws)
-        if not self.corner:
-            for ax in self.diag_axs[1:]:
-                ax.format(yticklabels=[])
-        self._fake_diag_yticks()
+    # def format_diag(self, **kws) -> None:
+    #     """Format diagonal subplots."""
+    #     for ax in self.diag_axs:
+    #         ax.format(**kws)
+    #     if not self.corner:
+    #         for ax in self.diag_axs[1:]:
+    #             ax.format(yticklabels=[])
+    #     self._fake_diag_yticks()
 
-    def format_offdiag(self, **kws) -> None:
-        """Format off-diagonal subplots."""
-        for ax in [self.offdiag_axs + self.offdiag_axs_u]:
-            ax.format(**kws)
+    # def format_offdiag(self, **kws) -> None:
+    #     """Format off-diagonal subplots."""
+    #     for ax in [self.offdiag_axs + self.offdiag_axs_u]:
+    #         ax.format(**kws)
 
     def get_labels(self) -> list[str]:
         """Return the dimension labels."""
@@ -434,14 +445,15 @@ class CornerGrid:
                     for j in range(self.ndim):
                         if i != j:
                             if (j < i) or (not self.corner):
-                                self.axs[i, j].format(ylim=limits[i])
+                                self.axs[i, j].set_ylim(limits[i])
             else:
                 for i in range(self.ndim - 1):
                     for ax in self.axs[i, :]:
-                        ax.format(ylim=limits[i + 1])
+                        ax.set_ylim(limits[i + 1])
 
             for i in range(self.ncols):
-                self.axs[:, i].format(xlim=limits[i])
+                for ax in self.axs[:, i]:
+                    ax.set_xlim(limits[i])
 
         self.limits = self.get_limits()
 
@@ -481,34 +493,36 @@ class CornerGrid:
     def _force_non_negative_diag_ymin(self) -> None:
         """Force diagonal ymins to be at least zero."""
         if any([ax.get_ylim()[0] < 0.0 for ax in self.diag_axs]):
-            self.format_diag(ylim=0.0)
+            for ax in self.diag_axs:
+                ymin, ymax = ax.get_ylim()
+                ax.set_ylim(0.0, ymax)
 
-    def set_diag_scale(self, scale: str = "linear", pad: float = 0.05) -> None:
-        """Set diagonal axis scale.
+    # def set_diag_scale(self, scale: str = "linear", pad: float = 0.05) -> None:
+    #     """Set diagonal axis scale.
 
-        Parameters
-        ----------
-        scale : {"linear", "log"}
-            If "linear", scale runs from 0 to 1. If "log", scale runs from half the
-            minimum plotted value to 1.
-        pad: float
-            Padding applied to the y axis limit.
-        """
-        if scale == "linear":
-            ymin = 0.0
-            ymax = 1.0 / self.diag_shrink
-            delta = ymax - ymin
-            ymax = ymin + delta * (1.0 + pad)
-            self.format_diag(yscale="linear", yformatter="auto", ymin=ymin, ymax=ymax)
-        elif scale == "log":
-            ymin = self.diag_ymin
-            ymax = 1.0
-            log_ymin = np.log10(ymin)
-            log_ymax = np.log10(ymax)
-            log_delta = log_ymax - log_ymin
-            log_delta = log_delta / self.diag_shrink
-            ymax = 10.0 ** (log_ymin + log_delta * (1.0 + pad))
-            self.format_diag(yscale="log", yformatter="log", ymin=ymin, ymax=ymax)
+    #     Parameters
+    #     ----------
+    #     scale : {"linear", "log"}
+    #         If "linear", scale runs from 0 to 1. If "log", scale runs from half the
+    #         minimum plotted value to 1.
+    #     pad: float
+    #         Padding applied to the y axis limit.
+    #     """
+    #     if scale == "linear":
+    #         ymin = 0.0
+    #         ymax = 1.0 / self.diag_shrink
+    #         delta = ymax - ymin
+    #         ymax = ymin + delta * (1.0 + pad)
+    #         self.format_diag(yscale="linear", yformatter="auto", ymin=ymin, ymax=ymax)
+    #     elif scale == "log":
+    #         ymin = self.diag_ymin
+    #         ymax = 1.0
+    #         log_ymin = np.log10(ymin)
+    #         log_ymax = np.log10(ymax)
+    #         log_delta = log_ymax - log_ymin
+    #         log_delta = log_delta / self.diag_shrink
+    #         ymax = 10.0 ** (log_ymin + log_delta * (1.0 + pad))
+    #         self.format_diag(yscale="log", yformatter="log", ymin=ymin, ymax=ymax)
 
     def plot_diag(self, hists: list[Histogram1D], **kws) -> None:
         """Compute one-dimensional histograms."""
@@ -541,7 +555,7 @@ class CornerGrid:
             hist_scaled = hist.copy()
             hist_scaled.values /= yscale
 
-            _plot_hist_1d(hist_scaled, ax=self.diag_axs[axis], **kws)
+            plot_hist_1d(hist_scaled, ax=self.diag_axs[axis], **kws)
 
         # Compute minimum positive value (for log scaling)
         for axis, hist in enumerate(hists):
@@ -560,7 +574,7 @@ class CornerGrid:
         diag_kws: dict = None,
         **kws,
     ) -> None:
-        """Plot an image.
+        """Plot an N-dimensional histogram.
 
         Parameters
         ----------
@@ -604,11 +618,12 @@ class CornerGrid:
                     if profy:
                         kws["profy"] = axis[0] == 0
 
-                _plot_hist(hist_proj, ax=ax, **kws)
+                plot_hist(hist_proj, ax=ax, **kws)
 
         if upper and not self.corner:
             for ax, axis in zip(self.offdiag_axs_u, self.offdiag_indices_u):
-                _plot_hist(hist.project(axis), ax=ax, **kws)
+                hist_proj = hist.project(axis)
+                plot_hist(hist_proj, ax=ax, **kws)
 
         self._post_plot()
 
@@ -677,9 +692,8 @@ class CornerGrid:
             if array_like(bins[axis]):
                 edges = bins[axis]
             else:
-                edges = np.histogram_bin_edges(
-                    points[:, axis], bins[axis], limits[axis]
-                )
+                edges = np.histogram_bin_edges(points[:, axis], bins[axis], limits[axis])
+                
             hist = Histogram1D(edges=edges)
             hist.bin(points[:, axis])
             hists.append(hist)
@@ -706,7 +720,7 @@ class CornerGrid:
                         hists[axis[1]].edges,
                     ]
 
-                _plot_points(points[:, axis], ax=ax, **kws)
+                plot(points[:, axis], ax=ax, **kws)
 
         if upper and not self.corner:
             for ax, axis in zip(self.offdiag_axs_u, self.offdiag_indices_u):
@@ -716,7 +730,7 @@ class CornerGrid:
                         hists[axis[1]].edges,
                     ]
 
-                _plot_points(points[:, axis], ax=ax, **kws)
+                plot(points[:, axis], ax=ax, **kws)
 
         self._post_plot()
 
